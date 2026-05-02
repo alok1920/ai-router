@@ -1,0 +1,36 @@
+# Environment — API keys live here, NEVER commit this
+.env
+
+# Dependencies
+node_modules/
+
+# Database — local data, not for version control
+*.db
+*.db-shm
+*.db-wal
+
+# Logs — local debug info only
+logs/
+*.log
+
+# Private project docs — stay on your machine only
+ROADMAP.md
+ROADMAP.html
+CODE_EXPLAINED.md
+TESTING.md
+COMMIT_GUIDE.md
+
+# Graphify generated graph files
+.graphify/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/settings.json
+.idea/
+
+# Build output
+dist/
+build/
