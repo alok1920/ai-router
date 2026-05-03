@@ -3,11 +3,14 @@
 const Groq = require('groq-sdk')
 const BaseProvider = require('./base')
 
+const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
+
 class GroqProvider extends BaseProvider {
   constructor (apiKey) {
     super('Groq', apiKey)
     if (this.isAvailable()) {
       this.client = new Groq({ apiKey })
+      this.modelName = process.env.GROQ_MODEL || DEFAULT_MODEL
     }
   }
 
@@ -16,10 +19,8 @@ class GroqProvider extends BaseProvider {
       throw new Error('Groq API key not configured')
     }
 
-    // Groq uses OpenAI-compatible format — straightforward
     const formattedMessages = []
 
-    // Inject system prompt as first message if it exists
     if (systemPrompt) {
       formattedMessages.push({
         role: 'system',
@@ -27,16 +28,15 @@ class GroqProvider extends BaseProvider {
       })
     }
 
-    // Add conversation history — roles are already normalized
     for (const msg of messages) {
       formattedMessages.push({
-        role: msg.role,     // already 'user' or 'assistant'
+        role: msg.role,
         content: msg.content
       })
     }
 
     const completion = await this.client.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
+      model: this.modelName,
       messages: formattedMessages,
       max_tokens: 8192,
       temperature: 0.7

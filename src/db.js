@@ -64,7 +64,7 @@ function createSession () {
 
 function getLatestSession () {
   const row = getDb().prepare(
-    'SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1'
+    'SELECT id FROM sessions ORDER BY rowid DESC LIMIT 1'
   ).get()
   return row ? row.id : null
 }
@@ -155,7 +155,7 @@ function setProviderError (name, errorMessage) {
     ON CONFLICT(name) DO UPDATE SET
       last_error = excluded.last_error,
       updated_at = excluded.updated_at
-  `).run(name, errorMessage)
+  `).run(name, errorMessage ?? null)
 }
 
 function incrementProviderStats (name, tokens) {

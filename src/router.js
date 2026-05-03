@@ -76,25 +76,29 @@ async function route (sessionId, userMessage, systemPrompt = '') {
       logger.info(`Attempting ${name}`)
       const response = await provider.complete(messages, systemPrompt)
 
-      // Success — save response and update stats
+      // Success — save response, clear any old error, update stats
       db.saveMessage(sessionId, 'assistant', response.text, name, response.tokenCount)
       db.incrementProviderStats(name, response.tokenCount)
+      db.setProviderError(name, null)
 
       logger.info(`${name} responded — ${response.tokenCount} tokens`)
       return { text: response.text, provider: name }
 
     } catch (err) {
-      logger.warn(`${name} failed — ${err.message}`)
-      db.setProviderError(name, err.message)
+      const errMsg = err.message || String(err)
+      logger.warn(`${name} failed — ${errMsg}`)
+      db.setProviderError(name, errMsg)
 
       if (isRateLimitError(err)) {
         logger.warn(`${name} rate limited — cooling down for 60s`)
         db.setProviderCooldown(name, COOLDOWN_MS)
-        continue  // try next provider
+        console.error(`  [${name}] rate limited — switching to next provider`)
+        continue
       }
 
-      // Non-rate-limit error — still try next provider but log differently
-      logger.error(`${name} unexpected error — ${err.message}`)
+      // Show real error in terminal so user can diagnose
+      console.error(`  [${name}] failed — ${errMsg}`)
+      logger.error(`${name} unexpected error — ${errMsg}`)
       continue
     }
   }
