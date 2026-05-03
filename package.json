@@ -7,10 +7,10 @@
     "ai-router": "./src/index.js"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "node --experimental-sqlite node_modules/.bin/jest --forceExit",
-    "test:watch": "node --experimental-sqlite node_modules/.bin/jest --watch"
+    "start": "node --experimental-sqlite src/index.js",
+    "dev": "node --experimental-sqlite --watch src/index.js",
+    "test": "node --experimental-sqlite node_modules/.bin/jest --forceExit --runInBand",
+    "test:watch": "node --experimental-sqlite node_modules/.bin/jest --watch --runInBand"
   },
   "keywords": [
     "ai",
