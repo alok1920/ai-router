@@ -32,6 +32,16 @@ jobs:
           ANTHROPIC_API_KEY: test-key-not-real
           OPENAI_API_KEY: test-key-not-real
 
+      - name: Debug auth token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "TOKEN IS EMPTY — secret NPM_TOKEN not found or not set"
+          else
+            echo "TOKEN IS SET — length ${#NODE_AUTH_TOKEN} characters"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Fix package.json warnings
         run: npm pkg fix
 
