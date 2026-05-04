@@ -1,16 +1,14 @@
 'use strict'
 
 const { DatabaseSync } = require('node:sqlite')
-const path = require('path')
-
-// Database lives in the project root — never in src/
-const DB_PATH = path.join(process.cwd(), 'ai-router.db')
+const { DB_FILE, ensureHomeDir } = require('./config')
 
 let db
 
 function getDb () {
   if (!db) {
-    db = new DatabaseSync(DB_PATH)
+    ensureHomeDir()
+    db = new DatabaseSync(DB_FILE)
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA foreign_keys = ON')
     runMigrations()
@@ -51,6 +49,14 @@ function runMigrations () {
       last_error      TEXT DEFAULT NULL,
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS token_usage (
+      id            TEXT PRIMARY KEY,
+      provider_name TEXT NOT NULL,
+      tokens_used   INTEGER NOT NULL,
+      date          TEXT NOT NULL DEFAULT (date('now')),
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `)
 }
 
@@ -88,8 +94,7 @@ function saveMessage (sessionId, role, content, providerUsed, tokenCount = 0) {
 function getRecentMessages (sessionId, limit = 10) {
   const all = getDb().prepare(`
     SELECT role, content, provider_used, created_at
-    FROM messages
-    WHERE session_id = ?
+    FROM messages WHERE session_id = ?
     ORDER BY created_at ASC
   `).all(sessionId)
   return all.slice(-limit)
@@ -98,9 +103,7 @@ function getRecentMessages (sessionId, limit = 10) {
 function getHistory (limit = 20) {
   return getDb().prepare(`
     SELECT role, content, provider_used, created_at, session_id
-    FROM messages
-    ORDER BY created_at DESC
-    LIMIT ?
+    FROM messages ORDER BY created_at DESC LIMIT ?
   `).all(limit)
 }
 
@@ -173,11 +176,7 @@ function getProviderStatus (name) {
   return getDb().prepare(
     'SELECT * FROM provider_status WHERE name = ?'
   ).get(name) || {
-    name,
-    cooldown_until: 0,
-    total_requests: 0,
-    total_tokens: 0,
-    last_error: null
+    name, cooldown_until: 0, total_requests: 0, total_tokens: 0, last_error: null
   }
 }
 
@@ -192,6 +191,24 @@ function isProviderOnCooldown (name) {
   return Date.now() < status.cooldown_until
 }
 
+// ── Token usage tracking ───────────────────────────────────────
+
+function recordTokenUsage (providerName, tokensUsed) {
+  getDb().prepare(`
+    INSERT INTO token_usage (id, provider_name, tokens_used)
+    VALUES (?, ?, ?)
+  `).run(generateId(), providerName, tokensUsed)
+}
+
+function getDailyTokenUsage (providerName) {
+  const row = getDb().prepare(`
+    SELECT COALESCE(SUM(tokens_used), 0) as total
+    FROM token_usage
+    WHERE provider_name = ? AND date = date('now')
+  `).get(providerName)
+  return row ? row.total : 0
+}
+
 // ── Utility ───────────────────────────────────────────────────
 
 function generateId () {
@@ -199,28 +216,17 @@ function generateId () {
 }
 
 function closeDb () {
-  if (db) {
-    db.close()
-    db = null
-  }
+  if (db) { db.close(); db = null }
 }
 
 module.exports = {
   getDb,
-  createSession,
-  getLatestSession,
-  saveMessage,
-  getRecentMessages,
-  getHistory,
-  setMemory,
-  getMemory,
-  getAllMemory,
-  deleteMemory,
-  setProviderCooldown,
-  setProviderError,
-  incrementProviderStats,
-  getProviderStatus,
-  getAllProviderStatus,
-  isProviderOnCooldown,
+  createSession, getLatestSession,
+  saveMessage, getRecentMessages, getHistory,
+  setMemory, getMemory, getAllMemory, deleteMemory,
+  setProviderCooldown, setProviderError,
+  incrementProviderStats, getProviderStatus,
+  getAllProviderStatus, isProviderOnCooldown,
+  recordTokenUsage, getDailyTokenUsage,
   closeDb
 }
