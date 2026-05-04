@@ -1,21 +1,41 @@
 'use strict'
 
-process.chdir(__dirname)
+// Mock config before requiring db
+jest.mock('../src/config', () => {
+  const os   = require('os')
+  const path = require('path')
+  const fs   = require('fs')
+
+  const HOME_DIR   = path.join(os.tmpdir(), 'ai-router-test-memory')
+  const LOGS_DIR   = path.join(HOME_DIR, 'logs')
+  const GRAPHS_DIR = path.join(HOME_DIR, 'graphs')
+
+  function ensureHomeDir () {
+    if (!fs.existsSync(HOME_DIR))   fs.mkdirSync(HOME_DIR,   { recursive: true })
+    if (!fs.existsSync(LOGS_DIR))   fs.mkdirSync(LOGS_DIR,   { recursive: true })
+    if (!fs.existsSync(GRAPHS_DIR)) fs.mkdirSync(GRAPHS_DIR, { recursive: true })
+  }
+
+  return {
+    DB_FILE:      path.join(HOME_DIR, 'test-memory.db'),
+    LOGS_DIR,
+    GRAPHS_DIR,
+    HOME_DIR,
+    ensureHomeDir,
+    loadEnv: () => {}
+  }
+})
 
 const db = require('../src/db')
-const fs = require('fs')
-const path = require('path')
-const TEST_DB = path.join(__dirname, 'test.db')
 
 afterAll(() => {
   db.closeDb()
-  if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
 describe('Memory persistence', () => {
   test('stores multiple preferences independently', () => {
-    db.setMemory('language', 'Hindi')
-    db.setMemory('tone', 'casual')
+    db.setMemory('language',  'Hindi')
+    db.setMemory('tone',      'casual')
     db.setMemory('expertise', 'intermediate')
 
     expect(db.getMemory('language')).toBe('Hindi')
@@ -26,30 +46,25 @@ describe('Memory persistence', () => {
   test('getAllMemory returns all preferences as an object', () => {
     db.setMemory('style', 'concise')
     const mem = db.getAllMemory()
-
     expect(typeof mem).toBe('object')
     expect(mem).toHaveProperty('style', 'concise')
   })
 
   test('unknown key returns null', () => {
-    const value = db.getMemory('this_key_does_not_exist')
-    expect(value).toBeNull()
+    expect(db.getMemory('this_key_does_not_exist_9999')).toBeNull()
   })
 
   test('overwriting a key keeps only the new value', () => {
     db.setMemory('overwrite_test', 'first')
     db.setMemory('overwrite_test', 'second')
     db.setMemory('overwrite_test', 'third')
-
     expect(db.getMemory('overwrite_test')).toBe('third')
   })
 
   test('deleted key is gone from getAllMemory', () => {
     db.setMemory('to_delete', 'value')
     db.deleteMemory('to_delete')
-
-    const mem = db.getAllMemory()
-    expect(mem).not.toHaveProperty('to_delete')
+    expect(db.getAllMemory()).not.toHaveProperty('to_delete')
   })
 })
 

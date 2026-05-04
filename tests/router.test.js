@@ -1,91 +1,119 @@
 'use strict'
 
-// Mock both providers before requiring router
-jest.mock('../src/providers/gemini', () => {
+// Shared mock complete functions — used by every adapter instance
+const mockGeminiComplete = jest.fn()
+const mockGroqComplete   = jest.fn()
+
+// Mock config before anything else
+jest.mock('../src/config', () => {
+  const os   = require('os')
+  const path = require('path')
+  const fs   = require('fs')
+
+  const HOME_DIR   = path.join(os.tmpdir(), 'ai-router-test-router')
+  const LOGS_DIR   = path.join(HOME_DIR, 'logs')
+  const GRAPHS_DIR = path.join(HOME_DIR, 'graphs')
+
+  function ensureHomeDir () {
+    if (!fs.existsSync(HOME_DIR))   fs.mkdirSync(HOME_DIR,   { recursive: true })
+    if (!fs.existsSync(LOGS_DIR))   fs.mkdirSync(LOGS_DIR,   { recursive: true })
+    if (!fs.existsSync(GRAPHS_DIR)) fs.mkdirSync(GRAPHS_DIR, { recursive: true })
+  }
+
+  return {
+    DB_FILE:      path.join(HOME_DIR, 'test-memory.db'),
+    LOGS_DIR,
+    GRAPHS_DIR,
+    HOME_DIR,
+    ensureHomeDir,
+    loadEnv:        () => {},
+    getProviders:   () => [
+      { name: 'Gemini Flash', type: 'google',            key_env: 'GEMINI_API_KEY', model: 'test', enabled: true },
+      { name: 'Groq',         type: 'openai-compatible', key_env: 'GROQ_API_KEY',   model: 'test', endpoint: 'http://test.com/v1', enabled: true }
+    ],
+    getCap:         () => null,
+    getSequence:    () => null
+  }
+})
+
+// Mock adapters — every instance uses the shared mock functions above
+jest.mock('../src/adapters/google', () => {
   return jest.fn().mockImplementation(() => ({
-    getName: () => 'Gemini Flash',
+    getName:     () => 'Gemini Flash',
     isAvailable: () => true,
-    complete: jest.fn()
+    complete:    (...args) => mockGeminiComplete(...args)
   }))
 })
 
-jest.mock('../src/providers/groq', () => {
+jest.mock('../src/adapters/openai-compatible', () => {
   return jest.fn().mockImplementation(() => ({
-    getName: () => 'Groq',
+    getName:     () => 'Groq',
     isAvailable: () => true,
-    complete: jest.fn()
+    complete:    (...args) => mockGroqComplete(...args)
   }))
 })
 
-process.chdir(__dirname)
+jest.mock('../src/adapters/anthropic', () => {
+  return jest.fn().mockImplementation(() => ({
+    getName:     () => 'Claude',
+    isAvailable: () => false,
+    complete:    jest.fn()
+  }))
+})
+
 process.env.GEMINI_API_KEY = 'test-gemini-key'
-process.env.GROQ_API_KEY = 'test-groq-key'
+process.env.GROQ_API_KEY   = 'test-groq-key'
 
 const db = require('../src/db')
 const { route, getProviderList } = require('../src/router')
-const GeminiProvider = require('../src/providers/gemini')
-const GroqProvider = require('../src/providers/groq')
 
-const fs = require('fs')
-const path = require('path')
-const TEST_DB = path.join(__dirname, 'test.db')
-
-// Clear provider cooldowns before every test so previous runs don't bleed in
+// Reset shared mocks and clear cooldowns before every test
 beforeEach(() => {
+  mockGeminiComplete.mockReset()
+  mockGroqComplete.mockReset()
   db.setProviderCooldown('Gemini Flash', -100000)
-  db.setProviderCooldown('Groq', -100000)
+  db.setProviderCooldown('Groq',         -100000)
 })
 
 afterAll(() => {
   db.closeDb()
-  if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
 // ── Failover tests ─────────────────────────────────────────────
 
 describe('Router failover', () => {
   test('uses first available provider on success', async () => {
-    const geminiInstance = GeminiProvider.mock.results[0].value
-    geminiInstance.complete.mockResolvedValueOnce({
-      text: 'Hello from Gemini',
-      tokenCount: 10
+    mockGeminiComplete.mockResolvedValueOnce({
+      text: 'Hello from Gemini', tokenCount: 10
     })
 
     const sessionId = db.createSession()
-    const result = await route(sessionId, 'hi', '')
+    const result    = await route(sessionId, 'hi', '')
 
     expect(result.provider).toBe('Gemini Flash')
     expect(result.text).toBe('Hello from Gemini')
   })
 
   test('switches to Groq when Gemini returns rate limit error', async () => {
-    const geminiInstance = GeminiProvider.mock.results[0].value
-    const groqInstance = GroqProvider.mock.results[0].value
-
-    const rateLimitError = new Error('rate limit exceeded')
+    const rateLimitError  = new Error('rate limit exceeded')
     rateLimitError.status = 429
-    geminiInstance.complete.mockRejectedValueOnce(rateLimitError)
-
-    groqInstance.complete.mockResolvedValueOnce({
-      text: 'Hello from Groq',
-      tokenCount: 8
+    mockGeminiComplete.mockRejectedValueOnce(rateLimitError)
+    mockGroqComplete.mockResolvedValueOnce({
+      text: 'Hello from Groq', tokenCount: 8
     })
 
     const sessionId = db.createSession()
-    const result = await route(sessionId, 'hi', '')
+    const result    = await route(sessionId, 'hi', '')
 
     expect(result.provider).toBe('Groq')
     expect(result.text).toBe('Hello from Groq')
   })
 
   test('throws when all providers fail', async () => {
-    const geminiInstance = GeminiProvider.mock.results[0].value
-    const groqInstance = GroqProvider.mock.results[0].value
-
-    const err = new Error('rate limit')
-    err.status = 429
-    geminiInstance.complete.mockRejectedValue(err)
-    groqInstance.complete.mockRejectedValue(err)
+    const err    = new Error('rate limit')
+    err.status   = 429
+    mockGeminiComplete.mockRejectedValue(err)
+    mockGroqComplete.mockRejectedValue(err)
 
     const sessionId = db.createSession()
     await expect(route(sessionId, 'hi', '')).rejects.toThrow()
@@ -95,7 +123,7 @@ describe('Router failover', () => {
 // ── Provider list tests ────────────────────────────────────────
 
 describe('Provider list', () => {
-  test('returns a list of providers with status', () => {
+  test('returns a list of providers with name and status', () => {
     const list = getProviderList()
     expect(Array.isArray(list)).toBe(true)
     expect(list.length).toBeGreaterThan(0)
