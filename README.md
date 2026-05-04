@@ -40,7 +40,7 @@ Your preferences — language, tone, coding style — are stored once and inject
 ## Install
 
 ```bash
-npm install -g ai-router
+npm install -g @alok1910/ai-router
 ```
 
 Requires Node.js 22 or higher.
