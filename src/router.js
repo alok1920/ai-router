@@ -1,84 +1,95 @@
 'use strict'
 
-require('dotenv').config()
+const db      = require('./db')
+const logger  = require('./logger')
+const cfg     = require('./config')
+const {
+  getProviders, getCap, getSequence, getProviderStatus: getCfgStatus
+} = cfg
 
-const db = require('./db')
-const logger = require('./logger')
-const GeminiProvider = require('./providers/gemini')
-const GroqProvider = require('./providers/groq')
+const OpenAICompatibleAdapter = require('./adapters/openai-compatible')
+const AnthropicAdapter        = require('./adapters/anthropic')
+const GoogleAdapter           = require('./adapters/google')
 
-// ── Provider registry ──────────────────────────────────────────
-// Order matters — first available provider in this list is tried first
-// Free tier providers come first to minimise cost
-const PROVIDERS = [
-  new GeminiProvider(process.env.GEMINI_API_KEY),
-  new GroqProvider(process.env.GROQ_API_KEY)
-]
-
-// Cooldown duration when a provider hits a rate limit (60 seconds)
 const COOLDOWN_MS = 60 * 1000
 
-// Error codes and messages that trigger a provider switch
-const RATE_LIMIT_CODES = [429, 402, 401]
+const RATE_LIMIT_CODES    = [429, 402, 401]
 const RATE_LIMIT_MESSAGES = [
-  'rate limit',
-  'rate_limit',
-  'quota exceeded',
-  'insufficient_quota',
-  'too many requests',
-  'resource exhausted'
+  'rate limit', 'rate_limit', 'quota exceeded',
+  'insufficient_quota', 'too many requests', 'resource exhausted'
 ]
+
+// ── Adapter factory ────────────────────────────────────────────
+
+function createAdapter (providerConfig) {
+  switch (providerConfig.type) {
+    case 'anthropic':         return new AnthropicAdapter(providerConfig)
+    case 'google':            return new GoogleAdapter(providerConfig)
+    case 'openai-compatible': return new OpenAICompatibleAdapter(providerConfig)
+    default:
+      return new OpenAICompatibleAdapter(providerConfig)
+  }
+}
+
+// ── Load adapters from user config ────────────────────────────
+
+function loadAdapters () {
+  cfg.loadEnv()
+  const providers = getProviders()
+  return providers
+    .filter(p => p.enabled !== false)
+    .map(p => createAdapter(p))
+}
 
 // ── Core routing function ──────────────────────────────────────
 
-/**
- * route — sends a message through the router
- *
- * Tries providers in order. On rate limit or auth error,
- * puts the provider on cooldown and tries the next one.
- * Saves both the user message and assistant response to SQLite.
- *
- * @param {string} sessionId — current session ID
- * @param {string} userMessage — the user's input
- * @param {string} systemPrompt — injected memory + context
- * @returns {Object} { text, provider } — response and who answered
- */
-async function route (sessionId, userMessage, systemPrompt = '') {
-  const available = getAvailableProviders()
+async function route (sessionId, userMessage, systemPrompt = '', contextType = 'general') {
+  cfg.loadEnv()
+
+  const adapters  = loadAdapters()
+  const available = getAvailableAdapters(adapters, contextType)
 
   if (available.length === 0) {
-    const msg = 'All providers are on cooldown. Try again in a moment.'
-    logger.warn('All providers on cooldown')
-    throw new Error(msg)
+    throw new Error(
+      'No providers available. Add one with: ai-router provider add'
+    )
   }
 
   // Save user message before attempting any provider
   db.saveMessage(sessionId, 'user', userMessage, 'user', 0)
 
-  // Get recent conversation history for context
-  const history = db.getRecentMessages(sessionId, 10)
+  // Build sliding window context — last 10 messages, summarise older ones
+  const history  = db.getRecentMessages(sessionId, 10)
+  const messages = history.map(m => ({ role: m.role, content: m.content }))
 
-  // Build normalized messages array — only role + content, nothing else
-  const messages = history.map(msg => ({
-    role: msg.role,
-    content: msg.content
-  }))
+  for (const adapter of available) {
+    const name = adapter.getName()
 
-  for (const provider of available) {
-    const name = provider.getName()
-
-    if (!provider.isAvailable()) {
+    if (!adapter.isAvailable()) {
       logger.warn(`${name} skipped — API key not configured`)
       continue
     }
 
+    // Check custom token cap
+    const cap = getCap(name)
+    if (cap) {
+      const dailyUsage = db.getDailyTokenUsage(name)
+      if (dailyUsage >= cap.daily_limit) {
+        logger.warn(`${name} at daily cap (${dailyUsage}/${cap.daily_limit}) — switching`)
+        console.error(`  [${name}] daily cap of ${cap.daily_limit.toLocaleString()} tokens reached — switching`)
+        db.setProviderCooldown(name, COOLDOWN_MS)
+        continue
+      }
+    }
+
     try {
       logger.info(`Attempting ${name}`)
-      const response = await provider.complete(messages, systemPrompt)
+      const response = await adapter.complete(messages, systemPrompt)
 
-      // Success — save response, clear any old error, update stats
+      // Success
       db.saveMessage(sessionId, 'assistant', response.text, name, response.tokenCount)
       db.incrementProviderStats(name, response.tokenCount)
+      db.recordTokenUsage(name, response.tokenCount)
       db.setProviderError(name, null)
 
       logger.info(`${name} responded — ${response.tokenCount} tokens`)
@@ -90,66 +101,97 @@ async function route (sessionId, userMessage, systemPrompt = '') {
       db.setProviderError(name, errMsg)
 
       if (isRateLimitError(err)) {
-        logger.warn(`${name} rate limited — cooling down for 60s`)
+        logger.warn(`${name} rate limited — cooling down 60s`)
         db.setProviderCooldown(name, COOLDOWN_MS)
         console.error(`  [${name}] rate limited — switching to next provider`)
         continue
       }
 
-      // Show real error in terminal so user can diagnose
-      console.error(`  [${name}] failed — ${errMsg}`)
-      logger.error(`${name} unexpected error — ${errMsg}`)
+      console.error(`  [${name}] failed — ${shortenError(errMsg)}`)
       continue
     }
   }
 
   throw new Error(
-    'All providers failed. Check your API keys with: ai-router providers'
+    'All providers failed or at cap.\n' +
+    '  Check status with: ai-router provider list\n' +
+    '  Add a provider with: ai-router provider add'
   )
 }
 
-// ── Provider availability ──────────────────────────────────────
+// ── Provider ordering with sequences ──────────────────────────
 
-function getAvailableProviders () {
-  return PROVIDERS.filter(provider => {
-    const name = provider.getName()
-    return !db.isProviderOnCooldown(name)
-  })
+function getAvailableAdapters (adapters, contextType) {
+  const sequence = getSequence(contextType) || getSequence('general')
+
+  // Order by sequence if one exists
+  let ordered = adapters
+  if (sequence && sequence.length > 0) {
+    const inSeq  = sequence
+      .map(name => adapters.find(a => a.getName() === name))
+      .filter(Boolean)
+    const notInSeq = adapters.filter(a => !sequence.includes(a.getName()))
+    ordered = [...inSeq, ...notInSeq]
+  }
+
+  return ordered.filter(a => !db.isProviderOnCooldown(a.getName()))
 }
 
+// ── Provider list for display ──────────────────────────────────
+
 function getProviderList () {
-  return PROVIDERS.map(provider => {
-    const name = provider.getName()
-    const status = db.getProviderStatus(name)
-    const onCooldown = db.isProviderOnCooldown(name)
-    const configured = provider.isAvailable()
+  cfg.loadEnv()
+  const providers = getProviders()
+
+  return providers.map(p => {
+    const adapter   = createAdapter(p)
+    const status    = db.getProviderStatus(p.name)
+    const onCooldown = db.isProviderOnCooldown(p.name)
+    const cap       = getCap(p.name)
+    const dailyUsed = db.getDailyTokenUsage(p.name)
+    const configured = adapter.isAvailable()
 
     let statusText
-    if (!configured)   statusText = 'not configured'
-    else if (onCooldown) {
-      const remainingSec = Math.ceil((status.cooldown_until - Date.now()) / 1000)
-      statusText = `cooling down (${remainingSec}s remaining)`
-    } else statusText = 'ready'
+    if (!configured) {
+      statusText = 'not configured'
+    } else if (cap && dailyUsed >= cap.daily_limit) {
+      statusText = `at daily cap (${dailyUsed.toLocaleString()}/${cap.daily_limit.toLocaleString()} tokens)`
+    } else if (onCooldown) {
+      const rem = Math.ceil((status.cooldown_until - Date.now()) / 1000)
+      statusText = `cooling down (${rem}s remaining)`
+    } else {
+      statusText = 'ready'
+    }
 
     return {
-      name,
-      status: statusText,
+      name:          p.name,
+      type:          p.type,
+      status:        statusText,
       totalRequests: status.total_requests,
-      totalTokens: status.total_tokens,
-      lastError: status.last_error,
+      totalTokens:   status.total_tokens,
+      dailyUsed,
+      cap:           cap ? cap.daily_limit : null,
+      lastError:     status.last_error,
       configured
     }
   })
 }
 
-// ── Error classification ───────────────────────────────────────
+// ── Error helpers ──────────────────────────────────────────────
 
 function isRateLimitError (err) {
-  const statusCode = err.status || err.statusCode || err.code
-  if (RATE_LIMIT_CODES.includes(statusCode)) return true
-
-  const message = (err.message || '').toLowerCase()
-  return RATE_LIMIT_MESSAGES.some(phrase => message.includes(phrase))
+  const code = err.status || err.statusCode || err.code
+  if (RATE_LIMIT_CODES.includes(code)) return true
+  const msg = (err.message || '').toLowerCase()
+  return RATE_LIMIT_MESSAGES.some(p => msg.includes(p))
 }
 
-module.exports = { route, getProviderList, getAvailableProviders }
+function shortenError (msg) {
+  if (msg.includes('404'))                                return 'model not found — name may have changed'
+  if (msg.includes('401') || msg.includes('api key'))     return 'invalid API key — run: ai-router provider update'
+  if (msg.includes('429') || msg.includes('rate limit'))  return 'rate limit hit'
+  if (msg.includes('decommissioned'))                     return 'model decommissioned — run: ai-router provider update'
+  return msg.slice(0, 80)
+}
+
+module.exports = { route, getProviderList, loadAdapters, createAdapter }
