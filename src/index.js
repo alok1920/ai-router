@@ -2,9 +2,23 @@
 'use strict'
 
 const { Command } = require('commander')
-const chalk = require('chalk')
-const pkg = require('../package.json')
-const commands = require('./commands')
+const chalk       = require('chalk')
+const pkg         = require('../package.json')
+
+// Load env from ~/.ai-router/.env on startup
+try {
+  const { loadEnv } = require('./config')
+  loadEnv()
+} catch { /* first run before config exists */ }
+
+const { setup }                                          = require('./commands/setup')
+const { chat }                                           = require('./commands/chat')
+const { providerList, providerAdd, providerRemove,
+        providerTest, providerUpdate }                   = require('./commands/provider')
+const { capSet, capRemove, capShow }                    = require('./commands/cap')
+const { sequenceSet, sequenceRemove, sequenceShow }     = require('./commands/sequence')
+const { indexProject }                                  = require('./commands/index-cmd')
+const { memoryShow, memorySet, memoryDelete, history }  = require('./commands/memory')
 
 const program = new Command()
 
@@ -16,62 +30,138 @@ program
 // ── setup ──────────────────────────────────────────────────────
 program
   .command('setup')
-  .description('Configure your API keys interactively')
-  .action(async () => {
-    await commands.setup()
-  })
+  .description('Configure API keys and preferences interactively')
+  .action(async () => { await setup() })
 
 // ── chat ───────────────────────────────────────────────────────
 program
   .command('chat')
   .description('Start a chat session')
-  .action(async () => {
-    await commands.chat()
-  })
+  .option('-p, --project <path>', 'Project path for code context injection')
+  .action(async (opts) => { await chat({ project: opts.project }) })
 
-// ── providers ──────────────────────────────────────────────────
+// ── provider ───────────────────────────────────────────────────
+const providerCmd = program
+  .command('provider')
+  .description('Manage AI providers')
+
+providerCmd
+  .command('list')
+  .description('Show all configured providers')
+  .action(() => { providerList() })
+
+providerCmd
+  .command('add')
+  .description('Add a new provider interactively')
+  .action(async () => { await providerAdd() })
+
+providerCmd
+  .command('remove [name]')
+  .description('Remove a provider')
+  .action(async (name) => { await providerRemove(name) })
+
+providerCmd
+  .command('test [name]')
+  .description('Test a provider connection')
+  .action(async (name) => { await providerTest(name) })
+
+providerCmd
+  .command('update [name]')
+  .description('Update a provider key or model')
+  .action(async (name) => { await providerUpdate(name) })
+
+// ── providers (shorthand alias) ────────────────────────────────
 program
   .command('providers')
-  .description('Show status of all configured providers')
-  .action(() => {
-    commands.providers()
+  .description('Show all providers (alias for provider list)')
+  .action(() => { providerList() })
+
+// ── cap ────────────────────────────────────────────────────────
+const capCmd = program
+  .command('cap')
+  .description('Manage daily token caps per provider')
+
+capCmd
+  .command('set <provider> <limit>')
+  .description('Set daily token cap (e.g. cap set claude 3000)')
+  .action((provider, limit) => { capSet(provider, limit) })
+
+capCmd
+  .command('remove <provider>')
+  .description('Remove token cap for a provider')
+  .action((provider) => { capRemove(provider) })
+
+capCmd
+  .command('show')
+  .description('Show all caps and daily usage')
+  .action(() => { capShow() })
+
+// Shorthand: ai-router cap claude 3000
+program
+  .command('cap <provider> [limit]')
+  .description('Set or show token cap (e.g. ai-router cap claude 3000)')
+  .action((provider, limit) => {
+    if (limit) { capSet(provider, limit) }
+    else        { capShow() }
   })
+
+// ── sequence ───────────────────────────────────────────────────
+const seqCmd = program
+  .command('sequence')
+  .description('Manage provider priority sequences')
+
+seqCmd
+  .command('show')
+  .description('Show all configured sequences')
+  .action(() => { sequenceShow() })
+
+seqCmd
+  .command('remove <context>')
+  .description('Remove a sequence')
+  .action((ctx) => { sequenceRemove(ctx) })
+
+// Shorthand: ai-router sequence coding claude groq gemini
+program
+  .command('sequence <context> [providers...]')
+  .description('Set provider priority for a context (e.g. sequence coding claude groq)')
+  .action((ctx, providers) => { sequenceSet(ctx, providers) })
+
+// ── index ──────────────────────────────────────────────────────
+program
+  .command('index [path]')
+  .description('Index a project folder for code-aware context injection')
+  .option('--skip-hook', 'Skip always-on hook installation prompt')
+  .action(async (projectPath, opts) => {
+    await indexProject(projectPath, { skipHook: opts.skipHook })
+  })
+
+// ── memory ─────────────────────────────────────────────────────
+const memCmd = program
+  .command('memory')
+  .description('Manage persistent user preferences')
+
+memCmd
+  .command('show')
+  .description('Show all stored memory')
+  .action(() => { memoryShow() })
+
+memCmd
+  .command('set <key> <value>')
+  .description('Store a preference')
+  .action((key, value) => { memorySet(key, value) })
+
+memCmd
+  .command('delete <key>')
+  .description('Remove a preference')
+  .action((key) => { memoryDelete(key) })
 
 // ── history ────────────────────────────────────────────────────
 program
   .command('history')
   .description('Show recent conversation history')
-  .action(() => {
-    commands.history()
-  })
+  .action(() => { history() })
 
-// ── memory ─────────────────────────────────────────────────────
-const memoryCmd = program
-  .command('memory')
-  .description('Manage persistent user preferences')
-
-memoryCmd
-  .command('show')
-  .description('Show all stored memory')
-  .action(() => {
-    commands.memoryShow()
-  })
-
-memoryCmd
-  .command('set <key> <value>')
-  .description('Store a preference (e.g. memory set language Hindi)')
-  .action((key, value) => {
-    commands.memorySet(key, value)
-  })
-
-memoryCmd
-  .command('delete <key>')
-  .description('Remove a stored preference')
-  .action((key) => {
-    commands.memoryDelete(key)
-  })
-
-// ── Default: show help if no command given ─────────────────────
+// ── Default: help ──────────────────────────────────────────────
 if (process.argv.length <= 2) {
   console.log(chalk.bold('\n  AI Router v' + pkg.version))
   console.log(chalk.gray('  Universal AI memory and credit router\n'))
