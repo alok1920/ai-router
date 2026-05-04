@@ -1,5 +1,5 @@
 {
-  "name": "ai-router",
+  "name": "@alok1920/ai-router",
   "version": "0.5.0",
   "description": "Universal AI memory and credit router — automatic failover across multiple AI providers with persistent memory",
   "main": "src/index.js",
@@ -16,7 +16,7 @@
     "ai", "router", "llm", "claude", "gemini", "groq",
     "openai", "memory", "failover", "developer-tools"
   ],
-  "author": "",
+  "author": "Alok Nagargoje",
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
