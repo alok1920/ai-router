@@ -96,15 +96,6 @@ capCmd
   .description('Show all caps and daily usage')
   .action(() => { capShow() })
 
-// Shorthand: ai-router cap claude 3000
-program
-  .command('cap <provider> [limit]')
-  .description('Set or show token cap (e.g. ai-router cap claude 3000)')
-  .action((provider, limit) => {
-    if (limit) { capSet(provider, limit) }
-    else        { capShow() }
-  })
-
 // ── sequence ───────────────────────────────────────────────────
 const seqCmd = program
   .command('sequence')
@@ -119,12 +110,6 @@ seqCmd
   .command('remove <context>')
   .description('Remove a sequence')
   .action((ctx) => { sequenceRemove(ctx) })
-
-// Shorthand: ai-router sequence coding claude groq gemini
-program
-  .command('sequence <context> [providers...]')
-  .description('Set provider priority for a context (e.g. sequence coding claude groq)')
-  .action((ctx, providers) => { sequenceSet(ctx, providers) })
 
 // ── index ──────────────────────────────────────────────────────
 program
