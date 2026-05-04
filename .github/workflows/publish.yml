@@ -1,33 +1,29 @@
-name: CI
+name: Publish to npm
 
 on:
   push:
-    branches: [ main, dev, 'feature/**', 'fix/**' ]
-  pull_request:
-    branches: [ main, dev ]
+    tags:
+      - 'v*'
 
 jobs:
-  test:
+  publish:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x, 24.x]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js ${{ matrix.node-version }}
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
+      - name: Run tests before publishing
         run: npm test
         env:
           NODE_ENV: test
@@ -35,3 +31,8 @@ jobs:
           GROQ_API_KEY: test-key-not-real
           ANTHROPIC_API_KEY: test-key-not-real
           OPENAI_API_KEY: test-key-not-real
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
