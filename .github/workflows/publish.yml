@@ -32,6 +32,9 @@ jobs:
           ANTHROPIC_API_KEY: test-key-not-real
           OPENAI_API_KEY: test-key-not-real
 
+      - name: Fix package.json warnings
+        run: npm pkg fix
+
       - name: Publish to npm
         run: npm publish
         env:
