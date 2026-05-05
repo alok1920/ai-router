@@ -160,7 +160,7 @@ function runGraphify (projectPath) {
   }
 
   execSync(
-    `"${graphify}" "${absPath}"`,
+    `"${graphify}"`,
     { stdio: 'pipe', cwd: absPath }
   )
 
@@ -172,7 +172,7 @@ function runGraphifyUpdate (projectPath) {
   const absPath      = path.resolve(projectPath)
 
   execSync(
-    `"${graphify}" --update "${absPath}"`,
+    `"${graphify}" --update`,
     { stdio: 'pipe', cwd: absPath }
   )
 

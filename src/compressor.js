@@ -195,12 +195,13 @@ function compress (projectPath) {
 function formatForPrompt (summary) {
   const lines = [
     `## Project: ${summary.project}`,
+    `## Root path: ${summary.path}`,
     `## Files: ${summary.total_files} | Symbols: ${summary.total_symbols}`,
     ''
   ]
 
   for (const [file, symbols] of Object.entries(summary.files)) {
-    lines.push(`${file}: ${symbols.join(', ')}`)
+    lines.push(`${summary.path}/${file}: ${symbols.join(', ')}`)
   }
 
   return lines.join('\n')
