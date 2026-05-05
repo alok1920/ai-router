@@ -107,6 +107,11 @@ seqCmd
   .action(() => { sequenceShow() })
 
 seqCmd
+  .command('set <context> [providers...]')
+  .description('Set provider order for a context (e.g. sequence set coding claude groq)')
+  .action((ctx, providers) => { sequenceSet(ctx, providers) })
+
+seqCmd
   .command('remove <context>')
   .description('Remove a sequence')
   .action((ctx) => { sequenceRemove(ctx) })
