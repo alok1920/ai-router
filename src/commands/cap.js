@@ -64,15 +64,17 @@ function capShow () {
     const dailyUsed = db.getDailyTokenUsage(p.name)
 
     if (cap) {
+      const exceeded = dailyUsed > cap.daily_limit
       const pct     = Math.min(100, Math.round((dailyUsed / cap.daily_limit) * 100))
       const barLen  = 20
       const filled  = Math.round((pct / 100) * barLen)
       const bar     = '█'.repeat(filled) + '░'.repeat(barLen - filled)
-      const color   = pct >= 100 ? chalk.red : pct >= 80 ? chalk.yellow : chalk.green
+      const color   = exceeded ? chalk.red : pct >= 80 ? chalk.yellow : chalk.green
+      const label   = exceeded ? chalk.red('EXCEEDED') : `${pct}%`
 
       console.log(`  ${chalk.bold(p.name)}`)
-      console.log(`  ${color(bar)} ${pct}%`)
-      console.log(chalk.gray(`  ${dailyUsed.toLocaleString()} / ${cap.daily_limit.toLocaleString()} tokens today`))
+      console.log(`  ${color(bar)} ${label}`)
+      console.log(chalk.gray(`  ${dailyUsed.toLocaleString()} / ${cap.daily_limit.toLocaleString()} tokens today${exceeded ? ' — cap hit, switching to next provider' : ''}`))
     } else {
       console.log(`  ${chalk.bold(p.name)} ${chalk.gray('no cap set — uses full API limit')}`)
     }
