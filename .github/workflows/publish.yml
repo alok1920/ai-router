@@ -41,7 +41,24 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_KEY }}
 
+      - name: Check if version already published
+        id: version_check
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name")
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          EXISTS=$(npm show "${PKG_NAME}@${PKG_VERSION}" version 2>/dev/null || echo "")
+          if [ -n "$EXISTS" ]; then
+            echo "already_published=true" >> $GITHUB_OUTPUT
+            echo "✓ Version ${PKG_VERSION} already published — skipping"
+          else
+            echo "already_published=false" >> $GITHUB_OUTPUT
+            echo "Version ${PKG_VERSION} not yet published — proceeding"
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_KEY }}
+
       - name: Publish to npm
+        if: steps.version_check.outputs.already_published == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
