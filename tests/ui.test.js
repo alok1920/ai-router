@@ -9,6 +9,7 @@ jest.mock('../src/config', () => {
   const HOME_DIR   = path.join(os.tmpdir(), 'ai-router-test-ui')
   const LOGS_DIR   = path.join(HOME_DIR, 'logs')
   const GRAPHS_DIR = path.join(HOME_DIR, 'graphs')
+  const VENV_DIR   = path.join(HOME_DIR, 'venv')
 
   function ensureHomeDir () {
     if (!fs.existsSync(HOME_DIR))   fs.mkdirSync(HOME_DIR,   { recursive: true })
@@ -18,7 +19,7 @@ jest.mock('../src/config', () => {
 
   return {
     DB_FILE: path.join(HOME_DIR, 'test-ui.db'),
-    LOGS_DIR, GRAPHS_DIR, HOME_DIR,
+    LOGS_DIR, GRAPHS_DIR, VENV_DIR, HOME_DIR,
     ensureHomeDir,
     loadEnv:      () => {},
     getProviders: () => [],
@@ -37,12 +38,13 @@ jest.mock('../src/router', () => ({
 }))
 
 jest.mock('../src/db', () => ({
-  getAllMemory:    () => ({ name: 'Alok', language: 'English' }),
-  getLatestSession: () => 'test-session',
-  createSession:  () => 'test-session',
-  setMemory:      jest.fn(),
-  getMemory:      () => null,
-  closeDb:        jest.fn()
+  getAllMemory:      () => ({ name: 'Alok', language: 'English' }),
+  getLatestSession:  () => 'test-session',
+  createSession:    () => 'test-session',
+  getRecentMessages: () => [],
+  setMemory:        jest.fn(),
+  getMemory:        () => null,
+  closeDb:          jest.fn()
 }))
 
 // ── Command palette tests ──────────────────────────────────────
@@ -74,6 +76,28 @@ describe('Start command', () => {
   test('start module exports start function', () => {
     const { start } = require('../src/commands/start')
     expect(typeof start).toBe('function')
+  })
+})
+
+// ── addSystemMessage tests ─────────────────────────────────────
+
+describe('_addSystemMessage', () => {
+  test('appends a System message and resets scrollOffset to 0', () => {
+    const { _addSystemMessage } = require('../src/ui/app')
+    const setMessages     = jest.fn()
+    const setScrollOffset = jest.fn()
+
+    _addSystemMessage(setMessages, setScrollOffset, 'hello world')
+
+    expect(setScrollOffset).toHaveBeenCalledTimes(1)
+    expect(setScrollOffset).toHaveBeenCalledWith(0)
+    expect(setMessages).toHaveBeenCalledTimes(1)
+
+    // Verify the updater appends the right shape
+    const updater = setMessages.mock.calls[0][0]
+    const result  = updater([])
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({ role: 'assistant', content: 'hello world', provider: 'System' })
   })
 })
 
