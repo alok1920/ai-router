@@ -5,9 +5,9 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D22.5.0-brightgreen)
 
-**Universal AI memory and credit router with rich terminal UI.**
+**Universal AI memory and credit router.**
 
-Stop re-explaining yourself every time you switch AI tools. ai-router remembers your preferences, keeps your conversation history, and automatically switches to the next provider when one runs out — with a full-screen terminal experience that feels like a real product.
+Stop re-explaining yourself every time you switch AI tools. ai-router remembers your preferences, keeps your conversation history, and automatically switches to the next provider when one runs out — all from your terminal with natural scroll and inline commands.
 
 ---
 
@@ -27,73 +27,87 @@ Requires Node.js 22 or higher.
 # 1. Configure providers and preferences
 ai-router setup
 
-# 2. Launch the full TUI experience
-ai-router start
-
-# Or use plain terminal mode
+# 2. Start chatting
 ai-router chat
 ```
 
 ---
 
-## ai-router start
-
-Launches a full-screen terminal UI. Fixed input bar at the bottom. Chat history scrolls above it. Status bar shows provider and token usage at all times.
+## What It Looks Like
 
 ```
-  ╔═══════════════════════════════════╗
-  ║         AI Router  v0.6.0         ║
-  ║   Universal AI Memory & Router    ║
-  ╚═══════════════════════════════════╝
+  ╔════════════════════════════════════════╗
+  ║ AI Router v0.7.0                       ║
+  ║ Universal AI Memory & Router           ║
+  ╚════════════════════════════════════════╝
 
-  Welcome back, Alok!
+  Type a message to chat  ·  /help for commands
 
-  Providers:
-    ● Gemini Flash — ready
-    ● Groq — ready
+  Providers  ● Groq  ·  ● Gemini Flash
 
-  Type / to see all commands   Ctrl+C to quit
+  You: explain how the router works
+
+  ◆ Groq
+  ────────────────────────────────────────
+  The router tries each provider in your
+  configured sequence. If one hits a rate
+  limit or your personal cap, it switches
+  automatically to the next one...
+  ────────────────────────────────────────
+
+  You: /cap
+  Token Caps
+
+  Groq
+  ████████░░░░░░░░░░░░ 40%
+  4,000 / 10,000 tokens today
+
+  Gemini Flash
+  ██████████████████░░ 90%
+  2,700 / 3,000 tokens today
+
+  You: /cap set groq 15000
+  ✓ Groq cap set to 15,000 tokens/day
 ```
 
-Once you start chatting the welcome screen gives way to your conversation:
+---
 
-```
-  You  09:32
-    what files are in this project?
+## Slash Commands Inside Chat
 
-  Gemini Flash  09:32
-    The project contains: src/adapters/, src/commands/,
-    src/ui/, src/router.js, src/config.js...
+All commands work inline — no need to exit and re-enter.
 
-  ─────────────────────────────────────────────────
-  ● Gemini Flash  124/300 tokens    ● Groq  0/3000
-  ╭─────────────────────────────────────────────╮
-  │ > Type a message or / for commands...       │
-  ╰─────────────────────────────────────────────╯
-```
+| Command | What it does |
+|---|---|
+| `/help` | Show all available commands |
+| `/cap` | Show token usage and caps with progress bars |
+| `/cap set <provider> <n>` | Set daily token cap |
+| `/cap remove <provider>` | Remove a cap |
+| `/memory` | Show stored preferences |
+| `/memory set <key> <value>` | Update a preference |
+| `/memory delete <key>` | Remove a preference |
+| `/status` | Show provider states and last errors |
+| `/providers` | Same as /status |
+| `/sequence` | Show priority sequences |
+| `/history` | Show recent conversation history |
+| `/index [path]` | Re-index project for code context |
+| `/clear` | Clear the screen |
+| `/new` | Start a fresh session |
+| `/exit` or `/quit` | Quit ai-router |
 
 ---
 
 ## Commands
 
-### `ai-router start`
-Launch the full-screen TUI. Fixed input bar, scrollable history, command palette.
-
-```bash
-ai-router start
-ai-router start --project ./my-project   # with code context
-```
-
 ### `ai-router chat`
-Plain terminal fallback. Works in scripts and CI environments.
+Start a conversation. Natural terminal scroll — use your trackpad or mouse wheel to scroll through history.
 
 ```bash
 ai-router chat
-ai-router chat --project ./my-project
+ai-router chat --project ./my-project   # with code context
 ```
 
 ### `ai-router setup`
-Guided onboarding. Configure providers, preferences, and API keys.
+Guided onboarding. Configure your name, language, tone, and add providers.
 
 ```bash
 ai-router setup
@@ -110,13 +124,31 @@ ai-router provider test       # verify a provider key works
 ai-router provider update     # update a key or model name
 ```
 
+**Adding any provider:**
+```bash
+ai-router provider add
+
+? Search for a provider: groq
+  ● Groq — free tier, fast inference
+
+? Groq API key: **********************
+✓ Groq connected and saved
+```
+
+**Adding Ollama (local, no API key needed):**
+```bash
+ai-router provider add
+# Search: ollama
+# Enter which model you pulled: llama3
+```
+
 ### `ai-router cap`
-Set your own daily token limit per provider.
+Set your own daily token limit per provider — below the real API limit.
 
 ```bash
-ai-router cap set "Gemini Flash" 300
+ai-router cap set Groq 10000
 ai-router cap show
-ai-router cap remove Groq
+ai-router cap remove "Gemini Flash"
 ```
 
 ### `ai-router sequence`
@@ -137,8 +169,10 @@ ai-router index ./my-project
 ai-router index .
 ```
 
+Uses graphify if Python 3.10+ is available. Falls back to built-in compressor otherwise.
+
 ### `ai-router memory`
-Store preferences that persist across every session and every provider.
+Store preferences that persist across every session and provider.
 
 ```bash
 ai-router memory show
@@ -154,27 +188,6 @@ Show recent conversation history.
 ```bash
 ai-router history
 ```
-
----
-
-## Slash Commands Inside the TUI
-
-Type `/` in the input bar to open the command palette. Filter by typing, navigate with arrow keys, select with Enter.
-
-| Command | What it does |
-|---|---|
-| `/cap` | Show token usage and caps |
-| `/cap set <provider> <n>` | Set a daily token cap |
-| `/clear` | Clear the screen |
-| `/exit` | Quit ai-router |
-| `/help` | Show all commands |
-| `/index [path]` | Re-index project |
-| `/memory` | Show stored preferences |
-| `/memory set <key> <value>` | Update a preference |
-| `/new` | Start a fresh session |
-| `/providers` | Show provider status |
-| `/sequence` | Show priority sequences |
-| `/status` | Show current provider state |
 
 ---
 
@@ -198,18 +211,48 @@ Type `/` in the input bar to open the command palette. Filter by typing, navigat
 
 ---
 
-## How It Works
+## How Failover Works
 
 ```
-You type a message
+You send a message
         ↓
-ai-router picks the best available provider
+Router tries first provider in your sequence
         ↓
-If that provider hits a limit or cap → switches automatically
+Provider hits rate limit or your personal cap
         ↓
-The new provider gets your full context + preferences
+Router switches to next provider automatically
         ↓
-You never notice the switch happened
+Full conversation context carries over
+        ↓
+You see which provider responded in [brackets]
+```
+
+Type `/status` at any time to see exactly what each provider is doing and why.
+
+---
+
+## Memory
+
+Stored permanently at `~/.ai-router/memory.db`. Injected into every prompt sent to any provider. Survives closing and reopening the tool.
+
+```bash
+ai-router memory set language Hindi
+# Every AI responds in Hindi from now on
+# Works across Groq, Gemini, Claude — any provider you configure
+```
+
+---
+
+## Code Context
+
+Index your project once and every code question gets compressed context automatically:
+
+```bash
+ai-router index ./my-project
+ai-router chat --project ./my-project
+
+# Now ask: what files handle routing?
+# AI knows your actual project structure
 ```
 
 ---
@@ -220,7 +263,7 @@ Everything stays on your machine at `~/.ai-router/`:
 
 ```
 ~/.ai-router/
-  config.json     providers, sequences, and caps
+  config.json     providers, sequences, caps
   .env            your API keys
   memory.db       conversation history and preferences
   graphs/         project indexes from ai-router index
@@ -228,7 +271,7 @@ Everything stays on your machine at `~/.ai-router/`:
   venv/           Python environment for graphify
 ```
 
-Nothing is sent anywhere except the API calls to your configured providers.
+Nothing is sent anywhere except API calls to your configured providers.
 
 ---
 
@@ -236,14 +279,14 @@ Nothing is sent anywhere except the API calls to your configured providers.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│            ai-router start (Ink TUI)            │
-│  Fixed input · Scrollable history · / palette   │
+│              ai-router chat                      │
+│  Natural scroll · Inline /commands · No exit     │
 └────────────────────┬────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────┐
 │               src/router.js                      │
-│   Reads config → picks provider by sequence      │
-│   Enforces caps → handles failover               │
+│   Reads config → sequence → enforces caps        │
+│   Handles failover automatically                 │
 └────┬──────────────┬──────────────┬──────────────┘
      │              │              │
 ┌────▼─────────┐ ┌──▼────────────┐ ┌▼─────────────┐
