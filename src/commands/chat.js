@@ -11,6 +11,15 @@ const pythonManager = require('../python-manager')
 const { indexProject } = require('./index-cmd')
 const path = require('path')
 
+// MemoryDistil — compresses old messages into structured facts
+// Falls back gracefully if not installed or API call fails
+let distil = null
+try {
+  distil = require('memorydistil').distil
+} catch {
+  // memorydistil not available — sliding window fallback used
+}
+
 async function chat (options = {}) {
   cfg.loadEnv()
   cfg.ensureHomeDir()
@@ -253,6 +262,12 @@ async function handleSlashCommand (message, ctx) {
     return
   }
 
+  // ── /webprompt ─────────────────────────────────────────────────
+  if (base === '/webprompt') {
+    await handleWebprompt(getSessionId(), ask)
+    return
+  }
+
   // ── /help ──────────────────────────────────────────────────────
   if (base === '/help') {
     console.log(chalk.bold('\n  Available Commands\n'))
@@ -272,6 +287,7 @@ async function handleSlashCommand (message, ctx) {
       ['/providers',        'show all provider states'],
       ['/sequence',         'show priority sequences'],
       ['/status',           'show current provider status'],
+      ['/webprompt',        'compress session and copy handoff prompt'],
     ]
     for (const [cmd, desc] of cmds) {
       console.log(`  ${chalk.cyan(cmd.padEnd(22))} ${chalk.gray(desc)}`)
@@ -290,11 +306,19 @@ async function handleSlashCommand (message, ctx) {
 // ── Display helpers ────────────────────────────────────────────
 
 function printHeader () {
+  const pkg      = require('../../package.json')
+  const version  = `v${pkg.version}`
+  const title    = `AI Router ${version}`
+  const subtitle = 'Universal AI Memory & Router'
+  const width    = 38
+
+  const pad = (str) => str + ' '.repeat(width - str.length)
+
   console.log()
-  console.log(chalk.green('  ╔════════════════════════════════════╗'))
-  console.log(chalk.green('  ║  ') + chalk.bold.white('AI Router') + chalk.gray('  v' + require('../../package.json').version) + chalk.green('               ║'))
-  console.log(chalk.green('  ║  ') + chalk.gray('Universal AI Memory & Router') + chalk.green('        ║'))
-  console.log(chalk.green('  ╚════════════════════════════════════╝'))
+  console.log(chalk.green(`  ╔${'═'.repeat(width + 2)}╗`))
+  console.log(chalk.green('  ║ ') + chalk.bold.white(pad(title))  + chalk.green(' ║'))
+  console.log(chalk.green('  ║ ') + chalk.gray(pad(subtitle))     + chalk.green(' ║'))
+  console.log(chalk.green(`  ╚${'═'.repeat(width + 2)}╝`))
   console.log()
   console.log(chalk.gray('  Type a message to chat  ·  /help for commands'))
   console.log()
@@ -381,6 +405,103 @@ function showMemory () {
   console.log()
 }
 
+// ── Webprompt handler ──────────────────────────────────────────
+
+async function handleWebprompt (sessionId, ask) {
+  if (!distil) {
+    console.log(chalk.yellow('\n  memorydistil not installed.'))
+    console.log(chalk.gray('  Run: npm install memorydistil\n'))
+    ask()
+    return
+  }
+
+  // Get all messages from current session
+  const allMessages = db.getRecentMessages(sessionId, 100)
+
+  if (allMessages.length === 0) {
+    console.log(chalk.yellow('\n  No messages in current session to compress.\n'))
+    ask()
+    return
+  }
+
+  if (allMessages.length < 4) {
+    console.log(chalk.yellow('\n  Conversation too short to compress — need at least 4 messages.\n'))
+    ask()
+    return
+  }
+
+  // Find best available provider for compression
+  const providers  = cfg.getProviders()
+  const available  = providers.find(p => {
+    const key = p.key_env ? process.env[p.key_env] : null
+    return key && key.length > 0
+  })
+
+  if (!available) {
+    console.log(chalk.red('\n  No provider available for compression.\n'))
+    ask()
+    return
+  }
+
+  // Map provider type to memorydistil provider name
+  const providerMap = {
+    'google':            'gemini',
+    'openai-compatible': available.name.toLowerCase().includes('groq') ? 'groq' : 'openai',
+    'anthropic':         'anthropic'
+  }
+  const mdProvider = providerMap[available.type] || 'groq'
+  const apiKey     = process.env[available.key_env]
+
+  process.stdout.write(chalk.gray(`  Compressing with ${available.name}...`))
+
+  try {
+    const messages = allMessages.map(m => ({
+      role:    m.role,
+      content: m.content
+    }))
+
+    const result = await distil({
+      messages,
+      compression: { provider: mdProvider, apiKey },
+      keepLast: 8
+    })
+
+    process.stdout.clearLine(0)
+    process.stdout.cursorTo(0)
+
+    const saved   = result.meta.savedTokenCount || 0
+    const original = result.meta.originalMessageCount || messages.length
+
+    console.log(chalk.green(`\n  ✓ Compressed ${original} messages`))
+    console.log(chalk.gray(`  Tokens: ${result.meta.tokenCount} used · ${saved} saved\n`))
+    console.log(chalk.bold('  ─────── Handoff Prompt ───────'))
+    console.log()
+    console.log(chalk.white(result.promptBlock))
+    console.log()
+    console.log(chalk.bold('  ──────────────────────────────'))
+    console.log()
+    console.log(chalk.gray('  Copy the block above and paste into any AI tool.'))
+    console.log(chalk.gray('  The new tool will have full context of this conversation.\n'))
+
+    // Try to copy to clipboard on Mac
+    try {
+      const { execSync } = require('child_process')
+      execSync(`echo ${JSON.stringify(result.promptBlock)} | pbcopy`)
+      console.log(chalk.green('  ✓ Copied to clipboard\n'))
+    } catch {
+      // pbcopy not available — user copies manually
+    }
+
+  } catch (err) {
+    process.stdout.clearLine(0)
+    process.stdout.cursorTo(0)
+    console.log(chalk.red(`\n  Compression failed: ${err.message}\n`))
+    logger.error(`webprompt: ${err.message}`)
+  }
+
+  ask()
+}
+
 // ── Code context ───────────────────────────────────────────────
 
 function getCodeContext (projectPath) {
@@ -415,6 +536,55 @@ function buildSystemPrompt (memory, codeContext) {
   }
 
   return lines.join('\n')
+}
+
+// ── MemoryDistil context builder ───────────────────────────────
+// Uses distil() to compress old messages when conversation gets long
+// Falls back to simple sliding window if memorydistil unavailable
+
+async function getCompressedMessages (sessionId) {
+  const allMessages = db.getRecentMessages(sessionId, 50)
+
+  // If conversation is short enough — just use as-is
+  if (!distil || allMessages.length <= 10) {
+    return allMessages.slice(-10).map(m => ({
+      role:    m.role,
+      content: m.content
+    }))
+  }
+
+  // Find a provider for compression
+  const providers = cfg.getProviders()
+  const available = providers.find(p => {
+    const key = p.key_env ? process.env[p.key_env] : null
+    return key && key.length > 0
+  })
+
+  if (!available) {
+    // No provider available — fall back to sliding window
+    return allMessages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+  }
+
+  const providerMap = {
+    'google':            'gemini',
+    'openai-compatible': available.name.toLowerCase().includes('groq') ? 'groq' : 'openai',
+    'anthropic':         'anthropic'
+  }
+  const mdProvider = providerMap[available.type] || 'groq'
+  const apiKey     = process.env[available.key_env]
+
+  try {
+    const messages = allMessages.map(m => ({ role: m.role, content: m.content }))
+    const result   = await distil({
+      messages,
+      compression: { provider: mdProvider, apiKey },
+      keepLast: 8
+    })
+    return result.messages
+  } catch {
+    // Compression failed — fall back to sliding window silently
+    return allMessages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+  }
 }
 
 function shortenError (msg) {

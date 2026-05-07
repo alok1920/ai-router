@@ -1,6 +1,6 @@
 {
   "name": "@alok1910/ai-router",
-  "version": "0.7.1",
+  "version": "0.6.0",
   "description": "Universal AI memory and credit router — automatic failover across multiple AI providers with persistent memory",
   "main": "src/index.js",
   "bin": {
@@ -14,16 +14,8 @@
     "test:watch": "node --experimental-sqlite node_modules/.bin/jest --watch --runInBand"
   },
   "keywords": [
-    "ai",
-    "router",
-    "llm",
-    "claude",
-    "gemini",
-    "groq",
-    "openai",
-    "memory",
-    "failover",
-    "developer-tools"
+    "ai", "router", "llm", "claude", "gemini", "groq",
+    "openai", "memory", "failover", "developer-tools"
   ],
   "author": "Alok Nagargoje",
   "license": "MIT",
@@ -35,6 +27,7 @@
     "dotenv": "^16.4.5",
     "groq-sdk": "^0.7.0",
     "inquirer": "^8.2.6",
+    "memorydistil": "^0.1.0",
     "openai": "^4.52.0"
   },
   "devDependencies": {
