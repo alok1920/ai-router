@@ -34,3 +34,7 @@ Thumbs.db
 # Build output
 dist/
 build/
+graphify-out/
+.claude/
+CLAUDE.md
+ai-router/
