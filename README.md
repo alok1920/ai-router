@@ -1,39 +1,13 @@
-# ai-router
+# @alok1910/ai-router
 
 ![CI](https://github.com/alok1920/ai-router/actions/workflows/ci.yml/badge.svg)
-![npm version](https://img.shields.io/npm/v/ai-router)
+![npm version](https://img.shields.io/npm/v/@alok1910/ai-router)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D22.5.0-brightgreen)
 
-**Universal AI memory and credit router.**
+**Universal AI memory and credit router with rich terminal UI.**
 
-Stop re-explaining yourself every time you switch AI tools. ai-router remembers your preferences, keeps your conversation history, and automatically switches to the next provider when one runs out — all from your terminal.
-
----
-
-## The Problem
-
-You use multiple AI tools. Every time you switch — because a free tier ran out, because you want a second opinion, because one is better at a specific task — you start from scratch. No memory of your preferences. No context of what you were working on. Every session a blank slate.
-
-ai-router fixes this. One tool. Any provider. Persistent memory.
-
----
-
-## How It Works
-
-```
-You type a message
-        ↓
-ai-router picks the best available provider
-        ↓
-If that provider hits a limit or cap → switches automatically
-        ↓
-The new provider gets your full conversation context + preferences
-        ↓
-You never notice the switch happened
-```
-
-Your preferences — language, tone, coding style — are stored once and injected into every prompt, across every provider, forever.
+Stop re-explaining yourself every time you switch AI tools. ai-router remembers your preferences, keeps your conversation history, and automatically switches to the next provider when one runs out — with a full-screen terminal experience that feels like a real product.
 
 ---
 
@@ -50,139 +24,118 @@ Requires Node.js 22 or higher.
 ## Quick Start
 
 ```bash
-# 1. Run guided setup — takes about 2 minutes
+# 1. Configure providers and preferences
 ai-router setup
 
-# 2. Start chatting
+# 2. Launch the full TUI experience
+ai-router start
+
+# Or use plain terminal mode
 ai-router chat
+```
+
+---
+
+## ai-router start
+
+Launches a full-screen terminal UI. Fixed input bar at the bottom. Chat history scrolls above it. Status bar shows provider and token usage at all times.
+
+```
+  ╔═══════════════════════════════════╗
+  ║         AI Router  v0.6.0         ║
+  ║   Universal AI Memory & Router    ║
+  ╚═══════════════════════════════════╝
+
+  Welcome back, Alok!
+
+  Providers:
+    ● Gemini Flash — ready
+    ● Groq — ready
+
+  Type / to see all commands   Ctrl+C to quit
+```
+
+Once you start chatting the welcome screen gives way to your conversation:
+
+```
+  You  09:32
+    what files are in this project?
+
+  Gemini Flash  09:32
+    The project contains: src/adapters/, src/commands/,
+    src/ui/, src/router.js, src/config.js...
+
+  ─────────────────────────────────────────────────
+  ● Gemini Flash  124/300 tokens    ● Groq  0/3000
+  ╭─────────────────────────────────────────────╮
+  │ > Type a message or / for commands...       │
+  ╰─────────────────────────────────────────────╯
 ```
 
 ---
 
 ## Commands
 
-### `ai-router setup`
-Guided onboarding. Asks your name, language, tone, and expertise. Walks through adding providers. Re-run anytime to update one setting.
+### `ai-router start`
+Launch the full-screen TUI. Fixed input bar, scrollable history, command palette.
 
 ```bash
-ai-router setup
+ai-router start
+ai-router start --project ./my-project   # with code context
 ```
 
----
-
 ### `ai-router chat`
-Start a conversation. Optionally attach a project folder for code-aware context.
+Plain terminal fallback. Works in scripts and CI environments.
 
 ```bash
 ai-router chat
 ai-router chat --project ./my-project
 ```
 
-**In-chat commands:**
+### `ai-router setup`
+Guided onboarding. Configure providers, preferences, and API keys.
 
-| Command | What it does |
-|---|---|
-| `/status` | Show all provider states and last errors |
-| `/new` | Start a fresh session |
-| `/exit` | Quit |
-
----
+```bash
+ai-router setup
+```
 
 ### `ai-router provider`
 Add, list, remove, and test providers. No code changes ever needed.
 
 ```bash
-ai-router provider add        # guided setup — search by name, paste key
-ai-router provider list       # show all configured providers and status
+ai-router provider add        # search by name, paste key, done
+ai-router provider list       # show all configured providers
 ai-router provider remove     # remove a provider
 ai-router provider test       # verify a provider key works
 ai-router provider update     # update a key or model name
 ```
 
-**Adding any provider:**
-```bash
-ai-router provider add
-
-? Search for a provider: groq
-
-  ● Groq — free tier, fast inference
-  ○ My provider is not in this list
-
-? Groq API key: **********************
-  Testing connection...  ✓
-✓ Groq connected and saved
-```
-
-**Adding a local model (Ollama):**
-```bash
-ai-router provider add
-# Search: ollama
-# No API key needed — just enter which model you pulled
-```
-
-**Adding any custom provider:**
-```bash
-ai-router provider add
-# Search your provider name
-# If not found — tool auto-detects endpoint from name
-# Only asks for URL if auto-detection fails
-```
-
----
-
 ### `ai-router cap`
-Set your own daily token limit per provider — below the real API limit. Router switches to the next provider automatically when your cap is hit.
+Set your own daily token limit per provider.
 
 ```bash
-ai-router cap set claude 3000     # stop using Claude at 3,000 tokens/day
-ai-router cap set groq 10000      # stop using Groq at 10,000 tokens/day
-ai-router cap show                # show usage bars for all providers
-ai-router cap remove claude       # remove cap for Claude
+ai-router cap set "Gemini Flash" 300
+ai-router cap show
+ai-router cap remove Groq
 ```
-
-Example output of `cap show`:
-```
-  Groq
-  ████████░░░░░░░░░░░░ 40%
-  4,000 / 10,000 tokens today
-
-  Claude
-  ██████████████████░░ 90%
-  2,700 / 3,000 tokens today
-```
-
----
 
 ### `ai-router sequence`
-Set the order providers are tried per context type.
+Set provider priority order per context type.
 
 ```bash
-ai-router sequence coding claude groq gemini
-ai-router sequence general gemini groq
+ai-router sequence set coding "Gemini Flash" Groq
+ai-router sequence set general Groq "Gemini Flash"
 ai-router sequence show
 ai-router sequence remove coding
 ```
 
-When you start a chat, the router follows your sequence for that context type. If no sequence is set for the current context, it falls back to the `general` sequence.
-
----
-
 ### `ai-router index`
-Index a project folder so ai-router understands your codebase. Code context is injected automatically into every chat question about that project.
+Index a project folder for code-aware AI responses.
 
 ```bash
 ai-router index ./my-project
-ai-router index .               # index current directory
+ai-router index .
 ```
-
-If Python 3.10+ is installed, graphify is set up automatically in an isolated environment and builds a full knowledge graph. If Python is not available, the built-in compressor extracts function names, class names, and exports from your source files.
-
-Use `--project` in chat to activate the index:
-```bash
-ai-router chat --project ./my-project
-```
-
----
 
 ### `ai-router memory`
 Store preferences that persist across every session and every provider.
@@ -192,16 +145,11 @@ ai-router memory show
 ai-router memory set language Hindi
 ai-router memory set tone casual
 ai-router memory set expertise intermediate
-ai-router memory set style "no inline comments in code"
 ai-router memory delete language
 ```
 
-Once set, every AI you talk to through ai-router knows these automatically. No need to repeat yourself.
-
----
-
 ### `ai-router history`
-Show recent conversation history across all sessions and providers.
+Show recent conversation history.
 
 ```bash
 ai-router history
@@ -209,9 +157,28 @@ ai-router history
 
 ---
 
-## Supported Providers
+## Slash Commands Inside the TUI
 
-ai-router works with any AI provider. A built-in directory covers the most common ones — just search by name and paste your key.
+Type `/` in the input bar to open the command palette. Filter by typing, navigate with arrow keys, select with Enter.
+
+| Command | What it does |
+|---|---|
+| `/cap` | Show token usage and caps |
+| `/cap set <provider> <n>` | Set a daily token cap |
+| `/clear` | Clear the screen |
+| `/exit` | Quit ai-router |
+| `/help` | Show all commands |
+| `/index [path]` | Re-index project |
+| `/memory` | Show stored preferences |
+| `/memory set <key> <value>` | Update a preference |
+| `/new` | Start a fresh session |
+| `/providers` | Show provider status |
+| `/sequence` | Show priority sequences |
+| `/status` | Show current provider state |
+
+---
+
+## Supported Providers
 
 | Provider | Free API | Notes |
 |---|---|---|
@@ -223,7 +190,7 @@ ai-router works with any AI provider. A built-in directory covers the most commo
 | Perplexity | ❌ Paid | Add with: provider add |
 | Ollama (local) | ✅ Free | Runs on your machine |
 | LM Studio (local) | ✅ Free | Runs on your machine |
-| Any custom LLM | Varies | If it has an HTTP endpoint, it works |
+| Any custom LLM | Varies | Any HTTP endpoint works |
 
 **Free API keys:**
 - Gemini: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
@@ -231,32 +198,18 @@ ai-router works with any AI provider. A built-in directory covers the most commo
 
 ---
 
-## Failover
-
-When a provider hits a rate limit or your personal cap, ai-router switches automatically.
+## How It Works
 
 ```
-Gemini Flash hits rate limit or daily cap
+You type a message
         ↓
-ai-router sets Gemini on cooldown
+ai-router picks the best available provider
         ↓
-Retries with next provider in your sequence
+If that provider hits a limit or cap → switches automatically
         ↓
-Full conversation context travels with the switch
+The new provider gets your full context + preferences
         ↓
-Type /status to see what happened
-```
-
----
-
-## Memory
-
-Stored permanently in a local database at `~/.ai-router/`. Injected into every prompt sent to any provider. Survives closing and reopening the tool.
-
-```bash
-ai-router memory set language Hindi
-# Every AI responds in Hindi from now on
-# Works across Gemini, Groq, Claude — any provider you configure
+You never notice the switch happened
 ```
 
 ---
@@ -267,15 +220,15 @@ Everything stays on your machine at `~/.ai-router/`:
 
 ```
 ~/.ai-router/
-  config.json     your providers, sequences, and caps
+  config.json     providers, sequences, and caps
   .env            your API keys
   memory.db       conversation history and preferences
   graphs/         project indexes from ai-router index
-  logs/           debug logs (never pushed to GitHub)
-  venv/           Python environment for graphify (if used)
+  logs/           debug logs
+  venv/           Python environment for graphify
 ```
 
-The package files are never modified. Nothing is sent anywhere except the API calls to your configured providers.
+Nothing is sent anywhere except the API calls to your configured providers.
 
 ---
 
@@ -283,13 +236,8 @@ The package files are never modified. Nothing is sent anywhere except the API ca
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  Your Terminal                   │
-└────────────────────┬────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────┐
-│              src/commands/                       │
-│   setup · chat · provider · cap · sequence       │
-│   index · memory · history                       │
+│            ai-router start (Ink TUI)            │
+│  Fixed input · Scrollable history · / palette   │
 └────────────────────┬────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────┐
@@ -298,15 +246,10 @@ The package files are never modified. Nothing is sent anywhere except the API ca
 │   Enforces caps → handles failover               │
 └────┬──────────────┬──────────────┬──────────────┘
      │              │              │
-┌────▼─────────┐ ┌──▼──────────┐ ┌▼──────────────┐
-│ adapters/    │ │ adapters/   │ │ adapters/     │
-│ google.js    │ │ openai-     │ │ anthropic.js  │
-│ all Gemini   │ │ compatible  │ │ all Claude    │
-│ models       │ │ .js         │ │ models        │
-│              │ │ Groq,Mistral│ │               │
-│              │ │ Ollama,GPT  │ │               │
-└──────────────┘ │ any custom  │ └───────────────┘
-                 └─────────────┘
+┌────▼─────────┐ ┌──▼────────────┐ ┌▼─────────────┐
+│ google.js    │ │openai-compat  │ │ anthropic.js  │
+│ All Gemini   │ │Groq,GPT,Ollama│ │ All Claude    │
+└──────────────┘ └───────────────┘ └──────────────┘
                      │
 ┌────────────────────▼────────────────────────────┐
 │           ~/.ai-router/                          │

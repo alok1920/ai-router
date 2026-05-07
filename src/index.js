@@ -13,6 +13,7 @@ try {
 
 const { setup }                                          = require('./commands/setup')
 const { chat }                                           = require('./commands/chat')
+const { start }                                          = require('./commands/start')
 const { providerList, providerAdd, providerRemove,
         providerTest, providerUpdate }                   = require('./commands/provider')
 const { capSet, capRemove, capShow }                    = require('./commands/cap')
@@ -27,16 +28,23 @@ program
   .description('Universal AI memory and credit router')
   .version(pkg.version)
 
+// ── start (Ink TUI) ────────────────────────────────────────────
+program
+  .command('start')
+  .description('Launch the full-screen TUI — fixed input bar, command palette, status panel')
+  .option('-p, --project <path>', 'Project path for code context injection')
+  .action(async (opts) => { await start({ project: opts.project }) })
+
 // ── setup ──────────────────────────────────────────────────────
 program
   .command('setup')
   .description('Configure API keys and preferences interactively')
   .action(async () => { await setup() })
 
-// ── chat ───────────────────────────────────────────────────────
+// ── chat (plain terminal fallback) ────────────────────────────
 program
   .command('chat')
-  .description('Start a chat session')
+  .description('Start a plain terminal chat session (fallback for scripts)')
   .option('-p, --project <path>', 'Project path for code context injection')
   .action(async (opts) => { await chat({ project: opts.project }) })
 
@@ -70,7 +78,7 @@ providerCmd
   .description('Update a provider key or model')
   .action(async (name) => { await providerUpdate(name) })
 
-// ── providers (shorthand alias) ────────────────────────────────
+// ── providers (alias) ──────────────────────────────────────────
 program
   .command('providers')
   .description('Show all providers (alias for provider list)')
@@ -83,7 +91,7 @@ const capCmd = program
 
 capCmd
   .command('set <provider> <limit>')
-  .description('Set daily token cap (e.g. cap set claude 3000)')
+  .description('Set daily token cap  e.g. cap set Groq 5000')
   .action((provider, limit) => { capSet(provider, limit) })
 
 capCmd
@@ -100,6 +108,11 @@ capCmd
 const seqCmd = program
   .command('sequence')
   .description('Manage provider priority sequences')
+
+seqCmd
+  .command('set <context> [providers...]')
+  .description('Set provider order  e.g. sequence set coding claude groq')
+  .action((ctx, providers) => { sequenceSet(ctx, providers) })
 
 seqCmd
   .command('show')
@@ -151,10 +164,14 @@ program
   .description('Show recent conversation history')
   .action(() => { history() })
 
-// ── Default: help ──────────────────────────────────────────────
+// ── Default: show help ─────────────────────────────────────────
 if (process.argv.length <= 2) {
   console.log(chalk.bold('\n  AI Router v' + pkg.version))
   console.log(chalk.gray('  Universal AI memory and credit router\n'))
+  console.log(chalk.gray('  Quick start:'))
+  console.log(chalk.cyan('    ai-router start') + chalk.gray('   — launch full TUI'))
+  console.log(chalk.cyan('    ai-router setup') + chalk.gray('   — configure providers'))
+  console.log(chalk.cyan('    ai-router chat') + chalk.gray('    — plain terminal mode\n'))
   program.outputHelp()
   process.exit(0)
 }
