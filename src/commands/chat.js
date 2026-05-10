@@ -20,6 +20,70 @@ try {
   // memorydistil not available — sliding window fallback used
 }
 
+// ── Webprompt cache ────────────────────────────────────────────
+// Background compression every 10 messages writes here so /webprompt
+// can return instantly with zero tokens burned at call time.
+const fs = require('fs')
+const os = require('os')
+const CACHE_FILE = path.join(os.homedir(), '.ai-router', 'webprompt-cache.json')
+
+function readCache () {
+  try {
+    return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'))
+  } catch { return null }
+}
+
+function writeCache (data) {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2), 'utf8')
+  } catch { /* silent fail */ }
+}
+
+function clearCache () {
+  try { fs.unlinkSync(CACHE_FILE) } catch {}
+}
+
+async function runBackgroundCache (sessionId) {
+  if (!distil) return
+  const allMessages = db.getRecentMessages(sessionId, 50)
+  if (allMessages.length < 4) return
+
+  const providers      = cfg.getProviders()
+  const providerStatus = getProviderList()
+  const available = providers.find(p => {
+    const key = p.key_env ? process.env[p.key_env] : null
+    if (!key) return false
+    const status = providerStatus.find(s => s.name === p.name)
+    return status && status.status === 'ready'
+  })
+
+  const providerMap = {
+    'google':            'gemini',
+    'openai-compatible': 'groq',
+    'anthropic':         'anthropic'
+  }
+
+  const messages = allMessages.map(m => ({ role: m.role, content: m.content }))
+
+  try {
+    const opts = { messages, keepLast: 3 }
+    if (available) {
+      opts.compression = {
+        provider: providerMap[available.type] || 'groq',
+        apiKey:   process.env[available.key_env]
+      }
+    }
+    const result = await distil(opts)
+    writeCache({
+      promptBlock:  result.promptBlock,
+      mode:         result.meta.mode,
+      messageCount: allMessages.length,
+      cachedAt:     new Date().toISOString(),
+      sessionId
+    })
+  } catch { /* silent — cache stays as-is */ }
+}
+
 async function chat (options = {}) {
   cfg.loadEnv()
   cfg.ensureHomeDir()
@@ -91,6 +155,12 @@ async function chat (options = {}) {
         console.log(chalk.gray('  ' + '─'.repeat(40)))
         console.log()
 
+        // Refresh /webprompt cache silently every 10 messages — no user-facing output.
+        const totalMessages = db.getRecentMessages(sessionId, 100).length
+        if (totalMessages > 0 && totalMessages % 10 === 0) {
+          runBackgroundCache(sessionId).catch(() => {})
+        }
+
       } catch (err) {
         process.stdout.clearLine(0)
         process.stdout.cursorTo(0)
@@ -124,6 +194,7 @@ async function handleSlashCommand (message, ctx) {
   if (base === '/new') {
     const id = db.createSession()
     setSessionId(id)
+    clearCache()
     logger.info(`New session: ${id}`)
     console.log(chalk.green('\n  ✓ New session started.\n'))
     ask()
@@ -415,7 +486,51 @@ async function handleWebprompt (sessionId, ask) {
     return
   }
 
-  // Get all messages from current session
+  // ── Cache-first path ─────────────────────────────────────────
+  // Background compression runs every 10 messages and writes a cache
+  // file. If we have a cache for the current session, return it
+  // instantly with any uncached messages appended as raw context.
+  const cache = readCache()
+  if (cache && cache.sessionId === sessionId && cache.promptBlock) {
+    const allMessages    = db.getRecentMessages(sessionId, 50)
+    const cachedCount    = cache.messageCount || 0
+    const recentMessages = allMessages.slice(cachedCount)
+
+    console.log(chalk.green(`\n  ✓ Retrieved from cache (${cache.mode} compression)`))
+    if (recentMessages.length > 0) {
+      console.log(chalk.gray(`  + ${recentMessages.length} new messages since last cache\n`))
+    } else {
+      console.log(chalk.gray(`  Cached at ${cache.cachedAt}\n`))
+    }
+
+    console.log(chalk.bold('  ─────── Handoff Prompt ───────'))
+    console.log()
+    console.log(chalk.white(cache.promptBlock))
+
+    if (recentMessages.length > 0) {
+      console.log(chalk.gray('\n  --- Recent messages (not yet compressed) ---'))
+      recentMessages.slice(-5).forEach(m => {
+        const label = m.role === 'user' ? 'You' : (m.provider_used || 'AI')
+        console.log(chalk.gray(`  ${label}: ${m.content.slice(0, 100)}`))
+      })
+    }
+
+    console.log()
+    console.log(chalk.bold('  ──────────────────────────────'))
+    console.log()
+    console.log(chalk.gray('  Copy the block above and paste into any AI tool.\n'))
+
+    try {
+      const { execSync } = require('child_process')
+      execSync(`echo ${JSON.stringify(cache.promptBlock)} | pbcopy`)
+      console.log(chalk.green('  ✓ Copied to clipboard\n'))
+    } catch {}
+
+    ask()
+    return
+  }
+
+  // ── Live distil() path — no cache available ─────────────────
   const allMessages = db.getRecentMessages(sessionId, 100)
 
   if (allMessages.length === 0) {
@@ -603,4 +718,4 @@ function shortenError (msg) {
   return msg.slice(0, 70)
 }
 
-module.exports = { chat }
+module.exports = { chat, readCache, writeCache, clearCache, runBackgroundCache, CACHE_FILE }
