@@ -442,7 +442,7 @@ async function handleWebprompt (sessionId, ask) {
   })
 
   // Build distil options — omitting compression triggers token-free mode in v0.2.0
-  const distilOpts = { keepLast: 8 }
+  const distilOpts = { keepLast: 3 }
 
   if (available) {
     const providerMap = {
