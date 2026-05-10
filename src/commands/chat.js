@@ -430,53 +430,60 @@ async function handleWebprompt (sessionId, ask) {
     return
   }
 
-  // Find best available provider for compression
-  const providers  = cfg.getProviders()
-  const available  = providers.find(p => {
+  // Use getProviderList() to respect ai-router caps and cooldowns
+  // If no provider is ready, distil() runs token-free automatically
+  const providers      = cfg.getProviders()
+  const providerStatus = getProviderList()
+  const available = providers.find(p => {
     const key = p.key_env ? process.env[p.key_env] : null
-    return key && key.length > 0
+    if (!key) return false
+    const status = providerStatus.find(s => s.name === p.name)
+    return status && status.status === 'ready'
   })
 
-  if (!available) {
-    console.log(chalk.red('\n  No provider available for compression.\n'))
-    ask()
-    return
-  }
+  // Build distil options — omitting compression triggers token-free mode in v0.2.0
+  const distilOpts = { keepLast: 8 }
 
-  // Map provider type to memorydistil provider name
-  const providerMap = {
-    'google':            'gemini',
-    'openai-compatible': available.name.toLowerCase().includes('groq') ? 'groq' : 'openai',
-    'anthropic':         'anthropic'
+  if (available) {
+    const providerMap = {
+      'google':            'gemini',
+      'openai-compatible': available.name.toLowerCase().includes('groq') ? 'groq' : 'openai',
+      'anthropic':         'anthropic'
+    }
+    distilOpts.compression = {
+      provider: providerMap[available.type] || 'groq',
+      apiKey:   process.env[available.key_env]
+    }
+    process.stdout.write(chalk.gray(`  Compressing with ${available.name}...`))
+  } else {
+    process.stdout.write(chalk.gray('  Compressing (token-free — all providers at cap)...'))
   }
-  const mdProvider = providerMap[available.type] || 'groq'
-  const apiKey     = process.env[available.key_env]
-
-  process.stdout.write(chalk.gray(`  Compressing with ${available.name}...`))
 
   try {
     const messages = allMessages.map(m => ({
       role:    m.role,
       content: m.content
     }))
+    distilOpts.messages = messages
 
-    const result = await distil({
-      messages,
-      compression: { provider: mdProvider, apiKey },
-      keepLast: 8
-    })
+    const result = await distil(distilOpts)
 
     process.stdout.clearLine(0)
     process.stdout.cursorTo(0)
 
-    const saved   = result.meta.savedTokenCount || 0
+    const saved    = result.meta.savedTokenCount || 0
     const original = result.meta.originalMessageCount || messages.length
 
     console.log(chalk.green(`\n  ✓ Compressed ${original} messages`))
-    console.log(chalk.gray(`  Tokens: ${result.meta.tokenCount} used · ${saved} saved\n`))
+    console.log(chalk.gray(`  Tokens: ${result.meta.tokenCount} used · ${saved} saved`))
+    console.log(chalk.gray(`  Mode: ${result.meta.mode || 'unknown'}\n`))
     console.log(chalk.bold('  ─────── Handoff Prompt ───────'))
     console.log()
-    console.log(chalk.white(result.promptBlock))
+    if (result.promptBlock) {
+      console.log(chalk.white(result.promptBlock))
+    } else {
+      console.log(chalk.gray('  (conversation short — sent as-is)'))
+    }
     console.log()
     console.log(chalk.bold('  ──────────────────────────────'))
     console.log()
@@ -484,12 +491,14 @@ async function handleWebprompt (sessionId, ask) {
     console.log(chalk.gray('  The new tool will have full context of this conversation.\n'))
 
     // Try to copy to clipboard on Mac
-    try {
-      const { execSync } = require('child_process')
-      execSync(`echo ${JSON.stringify(result.promptBlock)} | pbcopy`)
-      console.log(chalk.green('  ✓ Copied to clipboard\n'))
-    } catch {
-      // pbcopy not available — user copies manually
+    if (result.promptBlock) {
+      try {
+        const { execSync } = require('child_process')
+        execSync(`echo ${JSON.stringify(result.promptBlock)} | pbcopy`)
+        console.log(chalk.green('  ✓ Copied to clipboard\n'))
+      } catch {
+        // pbcopy not available — user copies manually
+      }
     }
 
   } catch (err) {
