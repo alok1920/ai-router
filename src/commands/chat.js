@@ -57,6 +57,21 @@ async function runBackgroundCache (sessionId) {
     return status && status.status === 'ready'
   })
 
+  // ── Cache upgrade check ────────────────────────────────────────
+  // If existing cache was built in token-free mode AND a provider is
+  // now ready → silently upgrade to AI quality compression
+  const existingCache = readCache()
+  const needsUpgrade  = existingCache &&
+                        existingCache.sessionId === sessionId &&
+                        existingCache.mode === 'token-free' &&
+                        available !== undefined
+
+  // Skip if no new messages AND no upgrade needed
+  const cachedCount    = existingCache ? (existingCache.messageCount || 0) : 0
+  const hasNewMessages = allMessages.length > cachedCount
+
+  if (!hasNewMessages && !needsUpgrade) return
+
   const providerMap = {
     'google':            'gemini',
     'openai-compatible': 'groq',
